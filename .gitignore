@@ -1,0 +1,25 @@
+__pycache__/
+*.pyc
+*.pyo
+.DS_Store
+
+# Local logs and generated outputs
+logs/
+merged/
+samples/
+taxonomy/
+viral_id_pipeline/
+
+# Large sequencing/data outputs
+*.fastq
+*.fastq.gz
+*.fq
+*.fq.gz
+*.bam
+*.bai
+*.sam
+*.fa
+*.fa.gz
+*.fasta
+*.fasta.gz
+*.dmnd

@@ -1,0 +1,2 @@
+sample	assembly	r1	r2
+sample01	/path/to/sample01.contigs.fa.gz	/path/to/sample01_R1.fastq.gz	/path/to/sample01_R2.fastq.gz
