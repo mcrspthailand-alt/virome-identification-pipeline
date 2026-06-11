@@ -1,68 +1,46 @@
-# Virome Identification Pipeline Scripts
+# Virome Identification Pipeline
 
-## Quick Context For New Chat
+Reusable, configurable pipeline template for identifying putative viral contigs from metagenomic assemblies and paired-end reads.
 
-This project contains scripts for identifying putative viral contigs from metagenomic assemblies and paired-end reads. The work started from sediment/air-specific scripts, but the current reusable version is the generic template in:
+This repository intentionally contains the reusable template only:
 
 ```text
 virome_pipeline_template/
 ```
 
-For new projects, use `virome_pipeline_template/` and edit only:
+Project-specific scripts, sample-specific configs, sequencing reads, assemblies, databases, and pipeline outputs should not be committed to this repository.
 
-```text
-virome_pipeline_template/config.env
-virome_pipeline_template/samples.tsv
-```
+## Quick Start
 
-The older air/sediment scripts remain in the repository as project-specific history/reference. They should not be the first choice for new analyses.
-
-Current local git state at the time this README was updated:
-
-```text
-local commit exists: d7388cb Add configurable virome identification pipeline
-GitHub remote: not configured yet
-```
-
-To push later, add a GitHub remote and push:
+Copy the template folder into a new project directory:
 
 ```bash
-git remote add origin https://github.com/<user>/<repo>.git
-git branch -M main
-git push -u origin main
+cp -r virome_pipeline_template my_project_virome_pipeline
+cd my_project_virome_pipeline
 ```
 
-## What The Template Does
+Edit:
 
-The template runs a configurable virome-identification workflow:
+```text
+config.env
+samples.tsv
+```
 
-1. Reads sample metadata from `samples.tsv`
-2. Processes each sample assembly and paired FASTQ files
-3. Maps reads back to contigs
-4. Calculates read counts and depth
-5. Runs viral prediction tools
-6. Runs homology searches
-7. Merges all evidence
-8. Assigns taxonomy from NCBI taxdump
-9. Writes final viral-contig tables
-10. Generates an output README explaining result files and columns
-
-## Main Command
+Run:
 
 ```bash
-cd virome_pipeline_template
 bash run_virome_pipeline.sh
 ```
 
-Or:
+or:
 
 ```bash
 bash run_virome_pipeline.sh /path/to/config.env
 ```
 
-## Required Input Files
+## Required Inputs
 
-`samples.tsv` must contain:
+`samples.tsv` must contain one row per sample:
 
 ```text
 sample	assembly	r1	r2
@@ -72,11 +50,11 @@ sample01	/path/to/sample01.contigs.fa.gz	/path/to/sample01_R1.fastq.gz	/path/to/
 Required columns:
 
 - `sample`: sample ID
-- `assembly`: contig FASTA from assembler such as MEGAHIT
+- `assembly`: assembled contig FASTA
 - `r1`: paired-end read 1 FASTQ
 - `r2`: paired-end read 2 FASTQ
 
-Assemblies can be:
+Assemblies can be uncompressed or gzipped FASTA:
 
 ```text
 .fa
@@ -85,9 +63,9 @@ Assemblies can be:
 .fasta.gz
 ```
 
-## Config File
+## Configuration
 
-Edit `config.env`:
+Set paths and parameters in `config.env`:
 
 ```bash
 OUT_BASE="/path/to/project/viral_id_pipeline"
@@ -101,10 +79,10 @@ VS2_MIN_LEN=500
 DIAMOND_DB="/path/to/databases/diamond/virus_nr.dmnd"
 GENOMAD_DB="/path/to/databases/genomad/genomad_db"
 VS2_DB_DIR="/path/to/databases/virsorter2_db"
-CHECKV_DB="/path/to/databases/checkv/checkv-db-v1.5"
+CHECKV_DB="/path/to/databases/checkv_db/checkv-db-v1.5"
 ```
 
-Homology thresholds:
+DIAMOND thresholds:
 
 ```bash
 DIAMOND_EVALUE="1e-10"
@@ -113,131 +91,47 @@ DIAMOND_ALNLEN=60
 DIAMOND_MAX_TARGET_SEQS=5
 ```
 
-## Pipeline Stages
+## Workflow
 
-### 1. `scripts/01_process_samples.sh`
+The pipeline runs:
 
-Per-sample processing:
-
-- decompress/copy assembly FASTA
-- filter low-complexity contigs with `bbduk.sh`
-- split contigs into length bins:
-  - `len500_999`
-  - `ge1000`
-- map reads to contigs with `minimap2`
-- sort/index BAM with `samtools`
-- calculate depth with `mosdepth`
-- run `VirSorter2`
-- run `geNomad`
-- run `CheckV`
-- run `Prodigal`
-- run DIAMOND `blastx`
-- run DIAMOND `blastp`
-
-### 2. `scripts/02_build_evidence_table.py`
-
-Builds the main evidence table by merging:
-
-- read counts
-- DIAMOND `blastx`
-- DIAMOND `blastp`
-- VirSorter2
-- geNomad
-- CheckV
-- Prodigal
-
-It also creates:
-
-```text
-putative_viral
-viral_evidence
-viral_evidence_count
-viral_confidence
-```
-
-### 3. `scripts/03_assign_taxonomy.py`
-
-Taxonomy stage:
-
-- parses virus/organism names from DIAMOND hit titles
-- maps names to NCBI taxid using `nodes.dmp` and `names.dmp`
-- downloads NCBI taxdump if needed
-- creates taxonomy map and read matrices
-
-### 4. `scripts/04_finalize_results.py`
-
-Final result stage:
-
-- merges taxonomy into the evidence table
-- classifies broad virus groups
-- writes final viral-contig files
-
-### 5. `scripts/05_write_output_readme.py`
-
-Writes:
-
-```text
-${OUT_BASE}/README.md
-```
-
-This generated README describes every output file and lists columns found in the real output TSV headers.
-
-## Tools Used
-
-Required command-line tools:
-
-```text
-bash
-python3
-awk
-gzip
-seqkit
-bbduk.sh
-minimap2
-samtools
-mosdepth
-virsorter
-genomad
-checkv
-prodigal
-diamond
-```
-
-Python package:
-
-```text
-pandas
-```
+1. Contig filtering and length binning
+2. Read mapping to contigs
+3. Read count and depth calculation
+4. VirSorter2
+5. geNomad
+6. CheckV
+7. Prodigal
+8. DIAMOND `blastx`
+9. DIAMOND `blastp`
+10. Evidence-table merge
+11. NCBI taxonomy assignment
+12. Final viral-contig tables
+13. Output README generation
 
 ## Why Both DIAMOND blastx And blastp?
 
-The template intentionally runs both:
+The template uses both homology approaches:
 
-```text
-DIAMOND blastx
-DIAMOND blastp
-```
+- `blastx`: nucleotide contigs are translated in six frames and searched against a viral protein database. This is useful for fragmented or short environmental contigs.
+- `blastp`: Prodigal-predicted proteins are searched against the same viral protein database. This provides ORF-level supporting evidence.
 
-`blastx` uses nucleotide contigs as query and translates them in six frames. It is more sensitive for fragmented or short environmental contigs.
-
-`blastp` uses Prodigal-predicted proteins as query. It is useful as ORF-level supporting evidence and is often cleaner/easier to interpret.
-
-They are treated as separate evidence sources:
+They are reported separately:
 
 ```text
 blastx_hit
 blastp_hit
 ```
 
-## Viral Calling Criteria
+## Viral Calling Rule
 
-Main evidence rule:
+Putative viral contigs are called by evidence:
 
 ```text
 putative_viral = vs2_hit OR genomad_hit OR blastx_hit OR blastp_hit
 ```
 
-Confidence rule:
+Confidence:
 
 ```text
 High    = viral_evidence_count >= 2
@@ -254,14 +148,14 @@ DIAMOND blastx
 DIAMOND blastp
 ```
 
-CheckV is included as annotation only. It is not used to discard contigs.
+CheckV is included as annotation only and is not used to discard contigs.
 
 ## Output Structure
 
-Template outputs:
+Outputs are written under `${OUT_BASE}`:
 
 ```text
-${OUT_BASE}/
+viral_id_pipeline/
   logs/
   samples/
   merged/
@@ -286,81 +180,53 @@ samples/<sample>/
   run_summary.tsv
 ```
 
-Merged cohort-level outputs:
+Important merged outputs:
 
 ```text
-merged/
-  all_contig_read_counts.tsv
-  diamond_blastx_best_hits.tsv
-  diamond_blastp_best_hits.tsv
-  all_viral_evidence.tsv
-  all_viral_evidence.parsed_organisms.tsv
-  virus_names_with_taxid.tsv
-  taxid_ranks.tsv
-  virus_taxonomy_map.tsv
-  virus_reads_matrix.tsv
-  virus_reads_matrix_with_taxonomy.tsv
-  virus_presence_absence_matrix.tsv
-  virus_reads_by_sample_long.tsv
-  all_contigs_with_annotations.tsv
-  final_virus_contigs.tsv
-  final_virus_contigs_bacteriophage.tsv
-  final_virus_contigs_eukaryotic.tsv
-  final_virus_contigs_archaeal.tsv
-  final_virus_contigs_unidentified.tsv
-  final_virus_summary.txt
-```
-
-## Most Important Output Files
-
-Use this for checking all evidence before taxonomy filtering/finalization:
-
-```text
+merged/all_contig_read_counts.tsv
+merged/diamond_blastx_best_hits.tsv
+merged/diamond_blastp_best_hits.tsv
 merged/all_viral_evidence.tsv
-```
-
-Use this as the main final viral-contig table:
-
-```text
-merged/final_virus_contigs.tsv
-```
-
-Use these for broad group subsets:
-
-```text
-merged/final_virus_contigs_bacteriophage.tsv
-merged/final_virus_contigs_eukaryotic.tsv
-merged/final_virus_contigs_archaeal.tsv
-merged/final_virus_contigs_unidentified.tsv
-```
-
-Use these for sample-by-virus abundance/presence summaries:
-
-```text
+merged/all_viral_evidence.parsed_organisms.tsv
+merged/virus_taxonomy_map.tsv
 merged/virus_reads_matrix.tsv
 merged/virus_reads_matrix_with_taxonomy.tsv
 merged/virus_presence_absence_matrix.tsv
 merged/virus_reads_by_sample_long.tsv
+merged/all_contigs_with_annotations.tsv
+merged/final_virus_contigs.tsv
+merged/final_virus_contigs_bacteriophage.tsv
+merged/final_virus_contigs_eukaryotic.tsv
+merged/final_virus_contigs_archaeal.tsv
+merged/final_virus_contigs_unidentified.tsv
+merged/final_virus_summary.txt
 ```
 
-## Notes For Future ChatGPT/Codex Sessions
+The pipeline writes `${OUT_BASE}/README.md`, which explains output files and columns based on the actual generated TSV headers.
 
-If starting a new chat, the fastest context is:
+## Required Tools
+
+Command-line tools expected in `PATH`:
 
 ```text
-We have a configurable virome identification pipeline template in virome_pipeline_template/.
-It uses samples.tsv + config.env, runs VirSorter2/geNomad/CheckV/Prodigal/DIAMOND blastx/DIAMOND blastp, then builds evidence and taxonomy tables.
-putative_viral = vs2_hit OR genomad_hit OR blastx_hit OR blastp_hit.
-viral_confidence is High for >=2 evidence sources, Medium for 1.
-CheckV is annotation only.
-Main output is merged/final_virus_contigs.tsv.
-README.md and virome_pipeline_template/README.md describe the project.
+bash
+python3
+awk
+gzip
+seqkit
+bbduk.sh
+minimap2
+samtools
+mosdepth
+virsorter
+genomad
+checkv
+prodigal
+diamond
 ```
 
-## Project-Specific Scripts
-
-Root-level air/sediment scripts are project-specific historical scripts. They are kept for reference, but for new projects use:
+Python package:
 
 ```text
-virome_pipeline_template/
+pandas
 ```
