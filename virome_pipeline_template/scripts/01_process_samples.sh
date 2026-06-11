@@ -7,6 +7,10 @@ CONFIG_DIR="$(cd "$(dirname "$CONFIG")" && pwd)"
 # shellcheck source=/dev/null
 source "$CONFIG"
 
+MAP_THREADS="${MAP_THREADS:-$THREADS}"
+SORT_THREADS="${SORT_THREADS:-8}"
+SAMTOOLS_SORT_MEM="${SAMTOOLS_SORT_MEM:-1G}"
+
 if [[ "$SAMPLES_TSV" != /* ]]; then
   SAMPLES_TSV="${CONFIG_DIR}/${SAMPLES_TSV}"
 fi
@@ -53,6 +57,10 @@ write_empty_blastx() {
 write_empty_blastp() {
   local out="$1"
   echo -e "contig\tblastp_sseqid\tblastp_slen\tblastp_pident\tblastp_aln_len\tblastp_mismatch\tblastp_gapopen\tblastp_qstart\tblastp_qend\tblastp_qlen\tblastp_sstart\tblastp_send\tblastp_evalue\tblastp_bitscore\tblastp_qcovhsp\tblastp_stitle\tblastp_n_orfs_strict" > "$out"
+}
+
+log_msg() {
+  echo "[$(date)] $*"
 }
 
 best_blastx_table() {
@@ -264,16 +272,40 @@ run_one_sample() {
     seqkit stats "$filtered" "$ge1000" "$len500_999" > "${d01}/seqkit_stats.tsv"
 
     local bam="${d02}/${sample}.sorted.bam"
-    if [[ ! -s "$bam" ]]; then
-      minimap2 -ax sr -t "$THREADS" "$filtered" "$r1" "$r2" \
-        | samtools view -@ "$THREADS" -bS - \
-        | samtools sort -@ "$THREADS" -o "$bam" -
+    local bam_tmp="${d02}/${sample}.sorted.tmp.bam"
+    local sort_tmp_dir="${d02}/samtools_sort_tmp"
+    mkdir -p "$sort_tmp_dir"
+    if [[ -s "$bam" ]]; then
+      if samtools quickcheck "$bam"; then
+        log_msg "[SKIP] valid BAM exists: $bam"
+      else
+        log_msg "[WARN] existing BAM failed samtools quickcheck; rebuilding: $bam"
+        rm -f "$bam" "${bam}.bai"
+      fi
     fi
-    [[ -s "${bam}.bai" ]] || samtools index "$bam"
+    if [[ ! -s "$bam" ]]; then
+      log_msg "[START] mapping and sorting reads: minimap2_threads=${MAP_THREADS}, sort_threads=${SORT_THREADS}, sort_mem=${SAMTOOLS_SORT_MEM}"
+      rm -f "$bam_tmp" "${bam_tmp}.bai"
+      minimap2 -ax sr -t "$MAP_THREADS" "$filtered" "$r1" "$r2" \
+        | samtools view -@ "$SORT_THREADS" -bS - \
+        | samtools sort -@ "$SORT_THREADS" -m "$SAMTOOLS_SORT_MEM" -T "${sort_tmp_dir}/${sample}.sort" -o "$bam_tmp" -
+      samtools quickcheck "$bam_tmp"
+      mv -f "$bam_tmp" "$bam"
+      log_msg "[DONE] mapping and sorting reads: $bam"
+    fi
+    if [[ ! -s "${bam}.bai" ]]; then
+      log_msg "[START] samtools index: $bam"
+      samtools index "$bam"
+      log_msg "[DONE] samtools index: ${bam}.bai"
+    fi
 
     local mos_prefix="${d08}/${sample}"
     local mos_summary="${mos_prefix}.mosdepth.summary.txt"
-    [[ -s "$mos_summary" ]] || mosdepth -t "$THREADS" -n "$mos_prefix" "$bam"
+    if [[ ! -s "$mos_summary" ]]; then
+      log_msg "[START] mosdepth"
+      mosdepth -t "$THREADS" -n "$mos_prefix" "$bam"
+      log_msg "[DONE] mosdepth"
+    fi
     awk 'BEGIN{OFS="\t"; print "contig","length","mean_depth"}
          NR>1 && $1!="total" { if ($4 ~ /^[0-9.eE+-]+$/) print $1,$2,$4 }' "$mos_summary" > "${d08}/contig_depth.tsv"
 
@@ -295,20 +327,30 @@ run_one_sample() {
     if [[ -s "$ids_len500" ]]; then seqkit grep -f "$ids_len500" "$len500_999" > "$fa_len500" || true; else : > "$fa_len500"; fi
 
     if [[ ! -f "${d04}/.done" ]]; then
+      log_msg "[START] VirSorter2"
       virsorter run -w "$d04" -i "$filtered" --db-dir "$VS2_DB_DIR" --min-length "$VS2_MIN_LEN" -j "$THREADS" all
       touch "${d04}/.done"
+      log_msg "[DONE] VirSorter2"
     fi
     if [[ ! -f "${d05}/.done" ]]; then
+      log_msg "[START] geNomad"
       genomad end-to-end --threads "$THREADS" "$filtered" "$d05" "$GENOMAD_DB"
       touch "${d05}/.done"
+      log_msg "[DONE] geNomad"
     fi
     if [[ ! -f "${d06}/.done" ]]; then
+      log_msg "[START] CheckV"
       checkv end_to_end "$filtered" "$d06" -t "$THREADS" -d "$CHECKV_DB"
       touch "${d06}/.done"
+      log_msg "[DONE] CheckV"
     fi
 
+    log_msg "[START] DIAMOND bin ge1000"
     run_diamond_bin "$sample" "ge1000" "$fa_ge1000" "$d07x"
+    log_msg "[DONE] DIAMOND bin ge1000"
+    log_msg "[START] DIAMOND bin len500_999"
     run_diamond_bin "$sample" "len500_999" "$fa_len500" "$d07s"
+    log_msg "[DONE] DIAMOND bin len500_999"
 
     {
       echo -e "sample\t${sample}"

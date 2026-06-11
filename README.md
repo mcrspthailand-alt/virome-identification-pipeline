@@ -144,6 +144,9 @@ OUT_BASE="/path/to/project/viral_id_pipeline"
 SAMPLES_TSV="./samples.tsv"
 
 THREADS=32
+MAP_THREADS=32
+SORT_THREADS=8
+SAMTOOLS_SORT_MEM="1G"
 MIN_CONTIG_LEN=500
 DEPTH_CUTOFF=2
 VS2_MIN_LEN=500
@@ -161,6 +164,9 @@ Important parameters:
 | `OUT_BASE` | Main output directory for the run |
 | `SAMPLES_TSV` | Sample sheet path |
 | `THREADS` | Number of CPU threads used by supported tools |
+| `MAP_THREADS` | Threads used by minimap2 read mapping |
+| `SORT_THREADS` | Threads used by samtools sort; keep this lower than mapping threads on shared HPC systems |
+| `SAMTOOLS_SORT_MEM` | Memory per samtools sort thread, for example `1G` |
 | `MIN_CONTIG_LEN` | Minimum contig length retained for analysis |
 | `DEPTH_CUTOFF` | Depth threshold used for depth-filtered contig outputs |
 | `VS2_MIN_LEN` | Minimum contig length passed to VirSorter2 |
@@ -633,6 +639,34 @@ Example:
 conda activate virome
 bash run_virome_pipeline.sh
 ```
+
+### Pipeline Looks Stuck After minimap2
+
+If the log stops after minimap2 and shows `samtools sort`, the bottleneck is usually sorting or temporary-file I/O, not viral detection.
+
+Check the per-sample log:
+
+```bash
+tail -f ${OUT_BASE}/logs/<sample>.process.log
+```
+
+On shared HPC systems, reduce sort threads in `config.env`:
+
+```bash
+MAP_THREADS=32
+SORT_THREADS=8
+SAMTOOLS_SORT_MEM="1G"
+```
+
+If the run was interrupted with `Ctrl-C`, remove only the incomplete BAM for that sample before rerunning:
+
+```bash
+rm -f ${OUT_BASE}/samples/<sample>/02_mapping/<sample>.sorted.bam
+rm -f ${OUT_BASE}/samples/<sample>/02_mapping/<sample>.sorted.bam.bai
+rm -f ${OUT_BASE}/samples/<sample>/02_mapping/<sample>.sorted.tmp.bam
+```
+
+The pipeline also checks existing BAM files with `samtools quickcheck`. If an interrupted BAM is detected, it will be rebuilt.
 
 ### Wrong Sample Paths
 
