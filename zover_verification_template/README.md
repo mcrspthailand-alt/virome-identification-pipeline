@@ -1,10 +1,15 @@
 # ZOVER verification template
 
-This optional stage follows the repository's virome-identification workflow. It
-checks candidate contigs against a host-associated ZOVER nucleotide reference
-with BLASTN and a protein reference with BLASTX. It retains the upstream call
-columns, reports every candidate (including no-hits), and prepares annotated
-family/gene groups and amino-acid inputs for manual phylogenetic review.
+This stage follows the repository's virome-identification workflow. It checks
+candidate contigs against a host-associated ZOVER nucleotide reference with
+BLASTN and a protein reference with BLASTX. It retains the upstream call
+columns and reports every candidate, including no-hits.
+
+**New to this stage? Follow the [step-by-step run guide](RUN_GUIDE.md).** It
+covers setup, input checks, the complete verification run, output review, and
+troubleshooting. Steps 1-7 are sufficient for virus verification. NCBI
+annotation, amino-acid tree inputs, and reference-DB inventory are optional
+follow-up tasks; they do not run as part of the core verification command.
 
 The scripts are reusable. Do not commit reference FASTAs, BLAST databases,
 sample FASTAs, NCBI metadata, or result directories to this repository.
@@ -73,7 +78,7 @@ Files with `.zover_only.tsv` omit the upstream columns. These results are
 evidence for verification, not a substitute for checking false positives,
 nonviral homologs, read support, genome context, and phylogeny.
 
-## Reference inventory and gene/CDS annotation
+## Optional: NCBI gene/CDS annotation
 
 NCBI E-utilities access is required for the metadata fetch. Set `NCBI_EMAIL`
 and optionally `NCBI_API_KEY` in the environment. This step may take time for
@@ -84,10 +89,6 @@ the inventory.
 ```bash
 python3 zover_verification_template/fetch_ncbi_metadata.py \
   --fasta "$ZOVER_NUCL" --outdir "$OUTDIR/ncbi_metadata"
-python3 zover_verification_template/summarize_zover_db.py \
-  --metadata "$OUTDIR/ncbi_metadata/zover_nuccore_metadata.tsv" \
-  --features "$OUTDIR/ncbi_metadata/zover_nuccore_features.tsv" \
-  --outdir "$OUTDIR/zover_db_summary"
 python3 zover_verification_template/build_verified_tree_groups.py \
   --candidates "$OUTDIR/combined/${OUTPUT_PREFIX}_tree_candidates.with_original.tsv" \
   --queries "$OUTDIR/queries" --protein-fasta "$ZOVER_PROT" \
@@ -96,15 +97,13 @@ python3 zover_verification_template/build_verified_tree_groups.py \
   --outdir "$OUTDIR/postprocess"
 ```
 
-The inventory writes family and marker/gene tables plus SVG figures. Marker
-classes are keyword summaries of available annotations, **not** a curated
-hallmark-gene database. The postprocessor writes
+The postprocessor writes
 `postprocess/verified_contigs_gene_CDS_annotation.tsv`, a manual curation
 template, and `postprocess/tree_groups/<family__gene>/` with candidate
 nucleotide contigs and reference proteins. Review annotations before final
 virus calls, especially when no `protein_id` match is available.
 
-## Amino-acid tree inputs
+## Optional: amino-acid tree inputs
 
 The grouped nucleotide contigs above are an extraction/audit step, not the
 sequences for a protein tree. This command reruns BLASTX only for selected
@@ -126,6 +125,22 @@ of `include` or `exclude`. Each group contains `tree_input_unaligned.faa`,
 regions and reference sampling, then align, trim, and infer/support trees with
 the phylogenetic tools chosen for the virus family. The script does not infer
 trees or assign species names.
+
+## Optional: reference-DB inventory
+
+Skip this step if you only need virus verification. If the NCBI metadata TSVs
+were fetched as above, the command below summarizes families and annotated
+gene/CDS marker categories in the downloaded ZOVER reference set:
+
+```bash
+python3 zover_verification_template/summarize_zover_db.py \
+  --metadata "$OUTDIR/ncbi_metadata/zover_nuccore_metadata.tsv" \
+  --features "$OUTDIR/ncbi_metadata/zover_nuccore_features.tsv" \
+  --outdir "$OUTDIR/zover_db_summary"
+```
+
+This writes family and marker/gene tables plus SVG figures. Marker classes
+are keyword summaries, **not** a curated hallmark-gene database.
 
 ## Scope and provenance
 
